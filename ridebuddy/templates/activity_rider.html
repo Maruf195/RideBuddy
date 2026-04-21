@@ -1,0 +1,174 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
+<style>
+    #riderMap {
+        height: 350px;
+        border-radius: 20px;
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        z-index: 1;
+    }
+
+    .leaflet-routing-container {
+        display: none;
+    }
+
+    .map-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: #202124;
+        padding: 10px 0;
+    }
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: #f8f9fa;
+        padding: 4px 10px;
+        border-radius: 20px;
+        border: 1px solid #eee;
+    }
+    .legend-line {
+        width: 16px;
+        height: 4px;
+        border-radius: 2px;
+    }
+
+    .passenger-card {
+        background: white;
+        border-radius: 16px;
+        padding: 16px;
+        margin-bottom: 12px;
+        border: 1px solid #f1f1f1;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="mainApp">
+    <div class="main-content" id="mainContent">
+        <div class="page active" id="riderActivityPage">
+            <div class="p-4 fade-in">
+                <h4 class="fw-bold mb-4"><i class="bi bi-activity me-2"></i>Mission Control</h4>
+                
+                <div id="riderActivityContent">
+                    <!-- List of Pending Rides -->
+                    <div id="riderPendingList" class="d-flex flex-column gap-3">
+                        <!-- Loaded dynamically -->
+                    </div>
+
+                    <!-- No Activity Placeholder -->
+                    <div id="riderNoActivity" class="text-center py-5 d-none">
+                        <div class="bg-light rounded-circle p-4 d-inline-block mb-3">
+                            <i class="bi bi-inbox fs-1 text-muted"></i>
+                        </div>
+                        <h5 class="fw-bold">No Assignments</h5>
+                        <p class="text-muted px-5">You don't have any ongoing rides or scheduled trips assigned to you yet.</p>
+                        <button class="btn btn-primary-custom" onclick="navigateTo('home_rider')">
+                            <i class="bi bi-house me-2"></i>Back to Home
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let allRides = [];
+
+    document.addEventListener('DOMContentLoaded', () => {
+        fetchRiderActivityStatus();
+        setInterval(fetchRiderActivityStatus, 15000);
+    });
+
+    async function fetchRiderActivityStatus() {
+        try {
+            const response = await fetch(routes['get_rider_activity_api']);
+            const data = await response.json();
+
+            if (!data.success) return;
+
+            allRides = data.rides || [];
+            
+            if (allRides.length === 0) {
+                document.getElementById('riderNoActivity').classList.remove('d-none');
+                document.getElementById('riderPendingList').innerHTML = '';
+                return;
+            }
+
+            document.getElementById('riderNoActivity').classList.add('d-none');
+            renderRiderList(data.server_time);
+        } catch (error) {
+            console.error("Failed to fetch rider activity:", error);
+        }
+    }
+
+    function renderRiderList(serverTime) {
+        const container = document.getElementById('riderPendingList');
+
+        container.innerHTML = allRides.map(ride => {
+            const timeInfo = getWaitTimeText(ride, serverTime);
+            const statusClass = ride.status === 'started' ? 'text-success' : 'text-primary';
+            
+            return `
+                <div class="card-custom p-3 bg-white shadow-sm border-0 rounded-4 cursor-pointer hover-scale" onclick="showRiderDetail(${ride.id}, '${ride.status}')">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="bg-primary bg-opacity-10 p-3 rounded-4">
+                            <i class="bi bi-lightning-charge-fill ${statusClass} fs-4"></i>
+                        </div>
+                        <div class="flex-grow-1 overflow-hidden">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <div class="fw-bold">${ride.vehicle?.model || 'No Vehicle'}</div>
+                                <span class="badge ${ride.status === 'started' ? 'bg-success' : 'bg-primary'} bg-opacity-10 ${statusClass} rounded-pill x-small">
+                                    ${ride.status.toUpperCase()}
+                                </span>
+                            </div>
+                            <div class="text-muted small text-truncate">${ride.route_summary}</div>
+                            <div class="d-flex justify-content-between mt-2 align-items-center">
+                                <div class="text-danger x-small fw-bold"><i class="bi bi-clock me-1"></i>${timeInfo}</div>
+                                <div class="fw-bold text-dark x-small">৳${ride.total_fare || 0}</div>
+                            </div>
+                        </div>
+                        <i class="bi bi-chevron-right text-muted small"></i>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function getWaitTimeText(ride, serverTime) {
+        if (!ride.scheduled_start) return "NOW";
+        const startAt = new Date(ride.scheduled_start);
+        const now = new Date(serverTime);
+        const diff = startAt - now;
+        
+        if (diff <= 0) return "READY";
+        const mins = Math.floor(diff / 60000);
+        const secs = Math.floor((diff % 60000) / 1000);
+        return `${mins}m ${secs}s`;
+    }
+
+    function showRiderDetail(rideId, status) {
+        if (typeof appState !== 'undefined') {
+            appState.currentRideId = rideId;
+            saveState();
+        }
+        localStorage.setItem('currentRideId', rideId);
+        if (status === 'started') {
+            navigateTo('ride_live_rider?ride_id=' + rideId);
+        } else {
+            navigateTo('ride_host_rider');
+        }
+    }
+</script>
+{% endblock %}

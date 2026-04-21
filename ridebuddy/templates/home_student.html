@@ -1,0 +1,246 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Home - RideBuddy{% endblock %}
+
+{% block content %}
+<div id="mainApp">
+    <div class="main-content" id="mainContent">
+        <div class="page active" id="studentHomePage">
+            <div class="p-4 fade-in">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div>
+                        <h5 class="mb-1 fw-bold">Hello, <span id="studentNameDisplay">{{ user.first_name|default:user.username }}</span>! 👋</h5>
+                        <p class="text-muted small mb-0">Where would you like to go?</p>
+                    </div>
+                    <div class="avatar avatar-sm overflow-hidden" id="studentAvatarSmall">
+                        {% if user.profile_picture %}
+                        <img src="{{ user.profile_picture.url }}" class="w-100 h-100 object-fit-cover" alt="Profile">
+                        {% else %}
+                        {{ user.first_name|slice:":1"|default:user.username|slice:":1"|upper }}
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Scheduling Toggle -->
+                <div class="d-flex bg-white rounded-pill p-1 mb-4 shadow-sm border">
+                    <button id="rideNowTab" class="btn btn-sm flex-fill rounded-pill fw-500 py-2 active-tab" onclick="toggleScheduleMode(false)">
+                        <i class="bi bi-lightning-fill me-1"></i>Ride Now
+                    </button>
+                    <button id="scheduleTab" class="btn btn-sm flex-fill rounded-pill fw-500 py-2 text-muted" onclick="toggleScheduleMode(true)">
+                        <i class="bi bi-calendar-event me-1"></i>Schedule
+                    </button>
+                </div>
+
+                <!-- Schedule Options (Hidden by default) -->
+                <div id="scheduleOptions" class="card-custom p-3 mb-4 d-none">
+                    <div class="row g-3">
+                        <div class="col-7">
+                            <label class="small text-muted mb-1 d-block">Pickup Time</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-white border-end-0 rounded-start-3">
+                                    <i class="bi bi-clock"></i>
+                                </span>
+                                <input type="datetime-local" class="form-control border-start-0 rounded-end-3" id="scheduledStartTime">
+                            </div>
+                        </div>
+                        <div class="col-5">
+                            <label class="small text-muted mb-1 d-block">Wait Window</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-white border-end-0 rounded-start-3">
+                                    <i class="bi bi-hourglass-split"></i>
+                                </span>
+                                <select class="form-select border-start-0 rounded-end-3" id="waitingThreshold">
+                                    <option value="15">15m</option>
+                                    <option value="30">30m</option>
+                                    <option value="45">45m</option>
+                                    <option value="60">60m</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-2 small text-muted">
+                        <i class="bi bi-info-circle me-1"></i>Ride window will be from selected time + wait window.
+                    </div>
+                </div>
+
+                <!-- Location Input -->
+                <div class="card-custom p-3 mb-4">
+                    <div class="position-relative">
+                        <div class="input-group">
+                            <span class="input-group-text bg-white border-end-0 rounded-start-3">
+                                <i class="bi bi-geo-alt text-danger"></i>
+                            </span>
+                            <input type="text" class="form-control border-start-0 rounded-end-3" id="pickupLocation"
+                                placeholder="Enter pickup location"
+                                oninput="debounceSearch(this.value, 'pickupSuggestions'); validateRideSearch()"
+                                autocomplete="off">
+                        </div>
+                        <!-- Suggestions Dropdown -->
+                        <div id="pickupSuggestions" class="suggestions-dropdown d-none"></div>
+                    </div>
+                    <div class="mt-3 position-relative">
+                        <div class="input-group"><span class="input-group-text bg-white border-end-0 rounded-start-3">
+                                <i class="bi bi-geo-alt-fill text-success"></i> </span> <input type="text"
+                                class="form-control border-start-0 rounded-end-3" id="dropLocation"
+                                placeholder="Enter destination"
+                                oninput="debounceSearch(this.value, 'dropSuggestions'); validateRideSearch()"
+                                autocomplete="off">
+                        </div>
+                        <!-- Suggestions Dropdown -->
+                        <div id="dropSuggestions" class="suggestions-dropdown d-none"></div>
+                    </div>
+                </div><!-- Recent History -->
+                <div class="mb-4">
+                    <h6 class="fw-bold mb-3"><i class="bi bi-clock-history me-2"></i>Recent Trips</h6>
+                    <div id="recentTripsContainer">
+                        <div class="history-item d-flex align-items-center">
+                            <div class="me-3"><i class="bi bi-geo-alt fs-4 text-primary"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <p class="mb-0 fw-500">Main Campus
+                                </p><small class="text-muted">Bashundhara
+                                    R/A</small>
+                            </div><i class="bi bi-chevron-right text-muted"></i>
+                        </div>
+                        <div class="history-item d-flex align-items-center">
+                            <div class="me-3"><i class="bi bi-geo-alt fs-4 text-primary"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <p class="mb-0 fw-500">Jamuna Future Park</p><small class="text-muted">Kuril</small>
+                            </div><i class="bi bi-chevron-right text-muted"></i>
+                        </div>
+                    </div>
+                </div><!-- Ride Options -->
+                <h6 class="fw-bold mb-3"><i class="bi bi-car-front me-2"></i>Choose Ride Type</h6>
+                <div class="row g-3">
+                    <div class="col-6">
+                        <div class="ride-option text-center" onclick="selectRideType('car', this)">
+                            <div class="ride-icon mx-auto mb-2"><i class="bi bi-car-front"></i>
+                            </div>
+                            <p class="mb-1 fw-500">Car</p>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="ride-option text-center" onclick="selectRideType('bike', this)">
+                            <div class="ride-icon mx-auto mb-2"
+                                style="background: linear-gradient(135deg, var(--secondary-color) 0%, #46c263 100%);">
+                                <i class="bi bi-bicycle"></i>
+                            </div>
+                            <p class="mb-1 fw-500">Bike</p>
+                        </div>
+                    </div>
+                </div><button id="findRidesBtn" class="btn btn-primary-custom w-100 mt-4" onclick="goToRidePage()"
+                    disabled> <i class="bi bi-search me-2"></i>Find Rides </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if pending_review %}
+<!-- Review Bottom Sheet Modal -->
+<div class="offcanvas offcanvas-bottom show" tabindex="-1" id="reviewModal" aria-labelledby="reviewModalLabel" style="height: 50vh; border-top-left-radius: 20px; border-top-right-radius: 20px; visibility: visible;" data-bs-backdrop="static">
+  <div class="offcanvas-header pb-0 border-bottom-0">
+    <h5 class="offcanvas-title fw-bold" id="reviewModalLabel">Rate your experience</h5>
+    <button type="button" class="btn-close" onclick="dismissReview()"></button>
+  </div>
+  <div class="offcanvas-body" style="padding-bottom: 90px !important;">
+    <div class="text-center mb-4 mt-2">
+        <p class="text-muted mb-2">How was your trip with <strong class="text-dark">{{ pending_review.target_name }}</strong>?</p>
+        <div class="rating-stars display-5">
+            <i class="bi bi-star text-warning" data-value="1" style="cursor: pointer;"></i>
+            <i class="bi bi-star text-warning" data-value="2" style="cursor: pointer;"></i>
+            <i class="bi bi-star text-warning" data-value="3" style="cursor: pointer;"></i>
+            <i class="bi bi-star text-warning" data-value="4" style="cursor: pointer;"></i>
+            <i class="bi bi-star text-warning" data-value="5" style="cursor: pointer;"></i>
+        </div>
+        <input type="hidden" id="reviewRatingVal" value="0">
+    </div>
+    <div class="form-floating mb-4">
+        <textarea class="form-control rounded-4 bg-light border-0" placeholder="Leave a comment here" id="reviewText" style="height: 100px"></textarea>
+        <label for="reviewText" class="text-muted">Anything else to add? (Optional)</label>
+    </div>
+    <button class="btn btn-primary btn-primary-custom w-100 rounded-pill py-3 fw-bold" onclick="submitReview({{ pending_review.id }}, '{{ pending_review.type }}')">Submit Review</button>
+  </div>
+</div>
+<!-- Dark Backdrop -->
+<div class="offcanvas-backdrop fade show" id="reviewBackdrop"></div>
+
+<script>
+    document.querySelectorAll('.rating-stars i').forEach(star => {
+        star.addEventListener('click', function() {
+            let val = parseInt(this.getAttribute('data-value'));
+            document.getElementById('reviewRatingVal').value = val;
+            let stars = document.querySelectorAll('.rating-stars i');
+            stars.forEach(s => {
+                let sVal = parseInt(s.getAttribute('data-value'));
+                if (sVal <= val) {
+                    s.classList.remove('bi-star');
+                    s.classList.add('bi-star-fill');
+                } else {
+                    s.classList.remove('bi-star-fill');
+                    s.classList.add('bi-star');
+                }
+            });
+        });
+    });
+
+    function dismissReview() {
+        fetch('/api/submit_review/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({ review_id: {{ pending_review.id }}, type: '{{ pending_review.type }}', status: 'cancel' })
+        }).then(() => {
+            location.reload();
+        }).catch(() => {
+            location.reload();
+        });
+    }
+
+    function submitReview(reviewId, reviewType) {
+        let rating = document.getElementById('reviewRatingVal').value;
+        let review = document.getElementById('reviewText').value;
+
+        if(rating == 0) {
+            alert('Please select a rating of at least 1 star.');
+            return;
+        }
+
+        fetch('/api/submit_review/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({ review_id: reviewId, type: reviewType, rating: rating, review: review })
+        }).then(res => res.json()).then(data => {
+            if(data.success) {
+                location.reload();
+            } else {
+                alert(data.message || "Failed to submit review.");
+            }
+        }).catch(err => {
+            console.error(err);
+        });
+    }
+
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+</script>
+{% endif %}
+{% endblock %}

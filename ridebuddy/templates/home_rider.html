@@ -1,0 +1,436 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Rider Home - RideBuddy{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
+<style>
+    #riderHomeMap {
+        height: 350px;
+        border-radius: 20px;
+        box-shadow: 0 8px 15px rgba(0, 0, 0, 0.05);
+        z-index: 1;
+    }
+    .leaflet-routing-container { display: none; }
+
+    .map-legend {
+        height: 40px !important;
+        min-height: 40px !important;
+        max-height: 40px !important;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        overflow-x: auto;
+        padding: 0 12px;
+        margin-top: 10px;
+        margin-bottom: 20px;
+        scrollbar-width: none;
+        border-radius: 12px;
+    }
+
+    .legend-item {
+        height: 40px;
+        flex-shrink: 0;
+        background: white;
+        border-radius: 50px;
+        padding: 0 14px 0 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        border: 1px solid #f1f1f1;
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: #444;
+    }
+
+    .legend-icon-img {
+        width: 18px;
+        height: 18px;
+        object-fit: contain;
+    }
+    
+    .passenger-avatars .avatar {
+        width: 32px;
+        height: 32px;
+        font-size: 12px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--primary-color);
+        color: white;
+    }
+
+    .rider-marker-container {
+        position: relative;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+    .rider-marker-ping {
+        position: absolute;
+        width: 40px;
+        height: 40px;
+        background: rgba(26, 115, 232, 0.3);
+        border-radius: 50%;
+        animation: ping 2s infinite ease-out;
+        z-index: -1;
+    }
+    @keyframes ping {
+        0% { transform: scale(0.5); opacity: 1; }
+        100% { transform: scale(2); opacity: 0; }
+    }
+    .ls-1 { letter-spacing: 1px; }
+
+    .card-custom {
+        transition: transform 0.2s;
+    }
+    .card-custom:active {
+        transform: scale(0.98);
+    }
+    .leaflet-div-icon {
+        background: transparent !important;
+        border: none !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="mainApp">
+    <div class="main-content" id="mainContent">
+        <div class="page active" id="riderHomePage">
+            <div class="p-4 fade-in">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div>
+                        <h5 class="mb-1 fw-bold">Hello, <span id="riderNameDisplay">{{ display_user.get_full_name|default:"Rider" }}</span>! 🏍️</h5>
+                        <p class="text-muted small mb-0">Ready to accept rides?</p>
+                    </div>
+                    {% if display_user.profile_picture %}
+                    <img src="{{ display_user.profile_picture.url }}" class="avatar avatar-sm rounded-circle" alt="Profile">
+                    {% else %}
+                    <div class="avatar avatar-sm"
+                        style="background: linear-gradient(135deg, var(--secondary-color) 0%, #46c263 100%);">
+                        {{ display_user.first_name|slice:":1"|upper|default:"R" }}
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- Map -->
+                <div id="riderHomeMap" class="mb-2"></div>
+                <div id="mapLegend" class="map-legend mb-4"></div>
+                <!-- Active Ride Card (Dynamic) -->
+                {% if active_ride %}
+                <div class="active-ride-info-card mb-4 animate-slide-up" 
+                     onclick="{% if active_ride.status == 'started' %}location.href='{% url 'rides:ride_live_rider' %}?ride_id={{ active_ride.id }}'{% else %}location.href='{% url 'rides:ride_host_rider' %}'{% endif %}" 
+                     style="cursor: pointer;">
+                    <div class="card-custom p-4 border-2 border-primary bg-white shadow-sm position-relative overflow-hidden" style="border: 2px solid var(--primary-color) !important;">
+                        <div class="position-absolute top-0 end-0 p-2">
+                             <span class="badge bg-primary px-3 rounded-pill shadow-sm">Active Ride</span>
+                        </div>
+                        
+                        <h6 class="fw-bold mb-3 text-dark">Current Ride Info</h6>
+                        
+                        <div class="d-flex align-items-center mb-4">
+                            <div class="passenger-avatars d-flex me-3">
+                                {% for p in active_ride.passengers %}
+                                    {% if not p.is_rider %}
+                                    <div class="avatar border border-2 border-white rounded-circle shadow-sm" 
+                                         style="margin-left: {% if forloop.first %}0{% else %}-12px{% endif %}; z-index: {{ forloop.revindex }};"
+                                         title="{{ p.name }}">
+                                        {% if p.photo %}
+                                            <img src="{{ p.photo }}" alt="{{ p.name }}" class="rounded-circle w-100 h-100" style="object-fit: cover;">
+                                        {% else %}
+                                            <div class="w-100 h-100 d-flex align-items-center justify-content-center bg-primary text-white rounded-circle">
+                                                {{ p.initial }}
+                                            </div>
+                                        {% endif %}
+                                    </div>
+                                    {% endif %}
+                                {% endfor %}
+                            </div>
+                            <div class="small fw-600 text-muted">{{ active_ride.joined_passenger_count }} Student{{ active_ride.joined_passenger_count|pluralize }} Joined</div>
+                        </div>
+
+                        <div class="row g-3 mb-4">
+                            <div class="col-6">
+                                <p class="text-muted x-small mb-1 text-uppercase fw-bold ls-1">Estimated Fare</p>
+                                <h4 class="fw-bold mb-0 text-primary">৳{{ active_ride.total_fare }}</h4>
+                            </div>
+                            <div class="col-6 text-end">
+                                <p class="text-muted x-small mb-1 text-uppercase fw-bold ls-1">Available Seats</p>
+                                <h4 class="fw-bold mb-0 text-success">{{ active_ride.available_seats }}</h4>
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-between align-items-center bg-light p-2 px-3 rounded-pill mb-4">
+                            <div class="small text-muted"><i class="bi bi-car-front me-1"></i>{{ active_ride.vehicle.model }}</div>
+                            <div class="small text-muted"><i class="bi bi-hash me-1"></i>{{ active_ride.vehicle.plate_no }}</div>
+                        </div>
+
+                        <div class="mt-4 pt-3 border-top">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div class="text-primary-custom small fw-600">
+                                    View Details & Navigation
+                                </div>
+                                <i class="bi bi-chevron-right text-primary"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if not active_ride %}
+                <div class="text-center py-5 bg-white rounded-4 shadow-sm border border-light mb-4">
+                    <div class="mb-3">
+                        <i class="bi bi-car-front-fill fs-1 text-muted opacity-50"></i>
+                    </div>
+                    <h6 class="fw-bold text-muted mb-1">No Active Ride</h6>
+                    <p class="text-muted small mb-0">You don't have any ride now.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if pending_review %}
+<!-- Review Bottom Sheet Modal -->
+<div class="offcanvas offcanvas-bottom show" tabindex="-1" id="reviewModal" aria-labelledby="reviewModalLabel" style="height: 50vh; border-top-left-radius: 20px; border-top-right-radius: 20px; visibility: visible;" data-bs-backdrop="static">
+  <div class="offcanvas-header pb-0 border-bottom-0">
+    <h5 class="offcanvas-title fw-bold" id="reviewModalLabel">Rate your passenger</h5>
+    <button type="button" class="btn-close" onclick="dismissReview()"></button>
+  </div>
+  <div class="offcanvas-body" style="padding-bottom: 90px !important;">
+    <div class="text-center mb-4 mt-2">
+        <p class="text-muted mb-2">How was your trip with <strong class="text-dark">{{ pending_review.target_name }}</strong>?</p>
+        <div class="rating-stars display-5">
+            <i class="bi bi-star text-warning" data-value="1" style="cursor: pointer;"></i>
+            <i class="bi bi-star text-warning" data-value="2" style="cursor: pointer;"></i>
+            <i class="bi bi-star text-warning" data-value="3" style="cursor: pointer;"></i>
+            <i class="bi bi-star text-warning" data-value="4" style="cursor: pointer;"></i>
+            <i class="bi bi-star text-warning" data-value="5" style="cursor: pointer;"></i>
+        </div>
+        <input type="hidden" id="reviewRatingVal" value="0">
+    </div>
+    <div class="form-floating mb-4">
+        <textarea class="form-control rounded-4 bg-light border-0" placeholder="Leave a comment here" id="reviewText" style="height: 100px"></textarea>
+        <label for="reviewText" class="text-muted">Anything else to add? (Optional)</label>
+    </div>
+    <button class="btn btn-primary btn-primary-custom w-100 rounded-pill py-3 fw-bold" onclick="submitReview({{ pending_review.id }}, '{{ pending_review.type }}')">Submit Review</button>
+  </div>
+</div>
+<!-- Dark Backdrop -->
+<div class="offcanvas-backdrop fade show" id="reviewBackdrop"></div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        initRiderHomeMap();
+    });
+
+    function initRiderHomeMap() {
+        const rLat = {{ rider_location.lat|default:23.8103 }};
+        const rLng = {{ rider_location.lng|default:90.4125 }};
+
+        const map = L.map('riderHomeMap', {
+            zoomControl: false
+        }).setView([rLat, rLng], 15);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OSM'
+        }).addTo(map);
+
+        const mapData = {{ map_data|safe }};
+        const bounds = L.latLngBounds();
+        const legendContainer = document.getElementById('mapLegend');
+        const uniqueLegendEntries = new Set();
+        if (legendContainer) legendContainer.innerHTML = '';
+
+        if (mapData && mapData.markers) {
+            mapData.markers.forEach(m => {
+                let icon;
+                if (m.type === 'rider') {
+                    // Custom rider icon with ping
+                    icon = L.divIcon({
+                        className: 'rider-marker',
+                        html: `<div class="rider-marker-container">
+                                <div class="rider-marker-ping"></div>
+                                <img src="${m.icon}" style="width:38px; height:38px; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3)); position: relative; z-index: 2;">
+                               </div>`,
+                        iconSize: [40, 40],
+                        iconAnchor: [20, 20]
+                    });
+                } else {
+                    // Member markers - using square proportions to avoid skew
+                    icon = L.divIcon({
+                        className: 'member-marker',
+                        html: `<img src="${m.icon}" style="width:35px; height:35px; filter: drop-shadow(0 3px 5px rgba(0,0,0,0.25));">`,
+                        iconSize: [35, 35],
+                        iconAnchor: [17.5, 35], // Anchor at the bottom center if it's a pin, or center if round
+                        popupAnchor: [0, -30]
+                    });
+                }
+
+                const marker = L.marker([m.lat, m.lng], { icon: icon }).addTo(map);
+                if (m.popup) {
+                    marker.bindPopup(m.popup);
+                }
+                bounds.extend([m.lat, m.lng]);
+
+                // Populate Legend
+                if (legendContainer && m.name && !uniqueLegendEntries.has(m.name)) {
+                    uniqueLegendEntries.add(m.name);
+                    const legendItem = document.createElement('div');
+                    legendItem.className = 'legend-item';
+                    legendItem.innerHTML = `
+                        <img src="${m.icon}" class="legend-icon-img">
+                        <span>${m.name.split(' ')[0]}</span>
+                    `;
+                    legendContainer.appendChild(legendItem);
+                }
+            });
+
+            // Routing
+            if (mapData.waypoints && mapData.waypoints.length >= 2) {
+                const lrmWaypoints = mapData.waypoints.map(w => L.latLng(w.lat, w.lng));
+                
+                L.Routing.control({
+                    waypoints: lrmWaypoints,
+                    routeWhileDragging: false,
+                    addWaypoints: false,
+                    draggableWaypoints: false,
+                    lineOptions: { 
+                        styles: [{ color: '#1a73e8', weight: 6, opacity: 0.8 }] 
+                    },
+                    createMarker: () => null // Markers handled above
+                }).addTo(map);
+                
+                setTimeout(() => {
+                    map.fitBounds(bounds, { padding: [50, 50] });
+                }, 500);
+            }
+        } else {
+            // No active ride logic - Show vehicle marker at current location
+            const riderIcon = L.divIcon({
+                className: 'rider-marker',
+                html: `<div class="rider-marker-container">
+                        <div class="rider-marker-ping"></div>
+                        <img src="/static/assets/media/vehiclemarker.png" style="width:38px; height:38px; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3)); position: relative; z-index: 2;">
+                       </div>`,
+                iconSize: [28, 28],
+                iconAnchor: [14, 28]
+            });
+            const marker = L.marker([rLat, rLng], { icon: riderIcon }).addTo(map);
+            marker.bindPopup("<b>I am here</b>");
+            
+            // Add to legend
+            if (legendContainer) {
+                const legendItem = document.createElement('div');
+                legendItem.className = 'legend-item';
+                legendItem.innerHTML = `
+                    <img src="/static/assets/media/vehiclemarker.png" class="legend-icon-img">
+                    <span>Me</span>
+                `;
+                legendContainer.appendChild(legendItem);
+            }
+
+            bounds.extend([rLat, rLng]);
+            map.setView([rLat, rLng], 15);
+        }
+    }
+
+    function toggleRiderStatus() {
+        const isOnline = document.getElementById('riderOnlineToggle').checked;
+        if (typeof showToast !== 'undefined') {
+            showToast(`You are now ${isOnline ? 'online' : 'offline'}`, isOnline ? 'success' : 'info');
+        }
+    }
+
+    {% if pending_review %}
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('.rating-stars i').forEach(star => {
+            star.addEventListener('click', function() {
+                let val = parseInt(this.getAttribute('data-value'));
+                document.getElementById('reviewRatingVal').value = val;
+                let stars = document.querySelectorAll('.rating-stars i');
+                stars.forEach(s => {
+                    let sVal = parseInt(s.getAttribute('data-value'));
+                    if (sVal <= val) {
+                        s.classList.remove('bi-star');
+                        s.classList.add('bi-star-fill');
+                    } else {
+                        s.classList.remove('bi-star-fill');
+                        s.classList.add('bi-star');
+                    }
+                });
+            });
+        });
+    });
+
+    function dismissReview() {
+        fetch('/api/submit_review/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({ review_id: {{ pending_review.id }}, type: '{{ pending_review.type }}', status: 'cancel' })
+        }).then(() => {
+            location.reload();
+        }).catch(() => {
+            location.reload();
+        });
+    }
+
+    function submitReview(reviewId, reviewType) {
+        let rating = document.getElementById('reviewRatingVal').value;
+        let review = document.getElementById('reviewText').value;
+
+        if(rating == 0) {
+            alert('Please select a rating of at least 1 star.');
+            return;
+        }
+
+        fetch('/api/submit_review/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({ review_id: reviewId, type: reviewType, rating: rating, review: review })
+        }).then(res => res.json()).then(data => {
+            if(data.success) {
+                location.reload();
+            } else {
+                alert(data.message || "Failed to submit review.");
+            }
+        }).catch(err => {
+            console.error(err);
+        });
+    }
+
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+    {% endif %}
+</script>
+{% endblock %}
