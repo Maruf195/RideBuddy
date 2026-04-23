@@ -29,7 +29,7 @@ RideBuddy is an ultra-premium, community-focused ride-sharing platform designed 
 
 1. **Clone the Repository**
    ```bash
-   git clone https://github.com/mdrayhan03/RideBuddy.git
+   git clone https://github.com/Maruf195/RideBuddy.git
    cd RideBuddy/app/ridebuddy
    ```
 
@@ -83,7 +83,7 @@ To experience RideBuddy as a native app:
 
 ## 👨‍💻 Developed By
 
-**Md. Rayhan Hossain**  
+**Maruf Khan**  
 *Lead Architect & Full-Stack Developer*
 
 ---
